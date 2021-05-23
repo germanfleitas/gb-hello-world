@@ -1,3 +1,4 @@
+; Import definitions file
 INCLUDE "gbhw.inc"
 
 ; Program start
@@ -16,18 +17,21 @@ start:
 
 ; initialization label
 initialization:
+  ; Set palette
   LD A, %11100100
   LD [rBGP], A
+
+  ; Set scrolls (X and Y) to (0,0)
   LD A, 0
   LD [rSCX], A
   LD [rSCY], A
 
-  CALL turn_of_LCD
+  CALL turn_off_LCD
 
   ; Load tile in the tile memory
-  LD HL, tile_face
+  LD HL, tiles
   LD DE, _VRAM
-  LD B, 16
+  LD B, 32 ; bytes to be copied, 2 tiles
 
 .loop_load_tile
   LD A, [HL]
@@ -39,25 +43,41 @@ initialization:
   JR .loop_load_tile
 .end_loop_load_tile
 
-; Write the tile into the tile map
+; Write tiles
 LD HL, _SCRN0
-LD [HL], $00
+LD DE, 32*32 ; amount of bytes in the background map
+
+; Clean screen
+.loop_clean_screen
+  LD A, 0
+  LD [HL], A
+  DEC DE
+  LD A, D
+  OR E
+  JP Z, .end_loop_clean_screen
+  INC HL
+  JP .loop_clean_screen
+.end_loop_clean_screen
+
+; Load tile
+LD HL, _SCRN0
+LD [HL], $01
 
 ; Config and activate display
 LD A, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_BGON|LCDCF_OBJ8|LCDCF_OBJOFF
 LD [rLCDC], A
 
 ; Infinite loop
-game_loop:
+loop_game:
   HALT
   NOP
-  JR game_loop
+  JR loop_game
 
 ; LCD's turn off rutine
-turn_of_LCD:
+turn_off_LCD:
   LD A, [rLCDC]
   RLCA
-  RET NC
+  RET NC ; do nothing if the screen is already turned off
 
 ; Wait for V-Blank
 .wait_VBlank
@@ -73,7 +93,11 @@ turn_of_LCD:
   RET
 
 ; Tile data
-tile_face:
-  DB $30,$30,$30,$20,$05,$7C,$80,$B0
-  DB $30,$30,$00,$30,$40,$50,$10,$10
-end_tile_face:
+tiles:
+  ; Blank tile
+  DB $00, $00, $00, $00, $00, $00, $00, $00
+  DB $00, $00, $00, $00, $00, $00, $00, $00
+  ; Our tile to display
+  DB $30, $30, $30, $20, $05, $7C, $80, $B0
+  DB $30, $30, $00, $30, $40, $50, $10, $10
+end_tiles:
