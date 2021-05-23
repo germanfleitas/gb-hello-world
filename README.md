@@ -5,4 +5,5 @@ First of all, kudos to David Pello. I just following his great tutorial ([Spanis
 
 I will eventually update this readme file to include how to run this, but until that if you can read Spanish (as me as an Uruguayan) I encourage you to follow his wiki.
 
-I'll expand this example with more commits.
+I'll expand this example with more commits, so you would see the difference and increment between versions.
+
