@@ -7,9 +7,8 @@ _SPR0_X   EQU _OAMRAM + 1
 _SPR0_NUM EQU _OAMRAM + 2
 _SPR0_ATT EQU _OAMRAM + 3
 
-; Variables to know where to move the sprite
-_MOVX EQU _RAM
-_MOVY EQU _RAM + 1
+; Variable to save the joypad state
+_PAD EQU _RAM
 
 ; Program start
 SECTION "start", ROM0[$0100]
@@ -32,6 +31,10 @@ initialization:
   LD [rBGP], A
   LD [rOBP0], A
 
+  ; Second palette
+  LD A, %00011011
+  LD [rOBP1], A
+
   ; Set scrolls (X and Y) to (0,0)
   LD A, 0
   LD [rSCX], A
@@ -44,7 +47,7 @@ initialization:
   LD DE, _VRAM
   LD B, 32 ; bytes to be copied, 2 tiles
 
-.loop_load_tile
+.loop_load_tile:
   LD A, [HL]
   LD [DE], A
   DEC B
@@ -54,21 +57,37 @@ initialization:
   JR .loop_load_tile
 .end_loop_load_tile
 
-  ; Write tiles
+; Write tiles
+; Fill background with corresponding tile
   LD HL, _SCRN0
   LD DE, 32*32 ; amount of bytes in the background map
 
 ; Clean screen (using a background tile)
-.loop_clean_screen
+.loop_clean_background
   LD A, 0
   LD [HL], A
   DEC DE
   LD A, D
   OR E
-  JP Z, .end_loop_clean_screen
+  JP Z, .end_loop_clean_background
   INC HL
-  JP .loop_clean_screen
-.end_loop_clean_screen
+  JP .loop_clean_background
+.end_loop_clean_background
+
+; Clean memory from sprites
+  LD HL, _OAMRAM
+  LD DE, 40*4 ; 40 sprites x 4 bytes each one
+
+.loop_clean_sprites
+  LD A, 0
+  LD [HL], A
+  DEC DE
+  LD A, D
+  OR E
+  JP Z, .end_loop_clean_sprites
+  INC HL
+  JP .loop_clean_sprites
+.end_loop_clean_sprites
 
   ; Load sprite
   LD A, 30
@@ -84,70 +103,137 @@ initialization:
 LD A, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_BGON|LCDCF_OBJ8|LCDCF_OBJON
 LD [rLCDC], A
 
-; Set animation variables
-LD A, 1
-LD [_MOVX], A
-LD [_MOVY], A
+; Read joypad (game loop start)
+movement:
+  ; Read joypad
+  CALL read_joypad
 
-; Animation (game loop start)
-animation:
   ; Wait for V-Blank
 .wait:
   LD A, [rLY]
   CP 145
   JR NZ, .wait
 
-  ; Y movement
-  LD A, [_SPR0_Y]
-  LD HL, _MOVY
-  ADD A, [HL]
-  LD HL, _SPR0_Y
-  LD [HL], A
+  ; Move sprite depending on the pressed button
+  ; Check right
+  LD A, [_PAD]
+  AND %00010000
+  CALL NZ, move_right
 
-  ; Compare to see if we need to change the direction
-  CP 152        ; Max Y
-  JR Z, .dec_y
-  cp 16         ; Min Y
-  JR Z, .inc_y
-  JR .end_y     ; No change needed
+  ; Check left
+  LD A, [_PAD]
+  AND %00100000
+  CALL NZ, move_left
 
-.dec_y:
-  LD A, -1
-  LD [_MOVY], A
-  JR .end_y
+  ; Check up
+  LD A, [_PAD]
+  AND %01000000
+  CALL NZ, move_up
 
-.inc_y:
-  LD A, 1
-  LD [_MOVY], A
+  ; Check down
+  LD A, [_PAD]
+  AND %10000000
+  CALL NZ, move_down
 
-.end_y:
-  ; X movement
-  LD A, [_SPR0_X]
-  LD HL, _MOVX
-  ADD A, [HL]
-  LD HL, _SPR0_X
-  LD [HL], A
+  ; Change palette color if A is pressed
+  ; Check A
+  LD A, [_PAD]
+  AND %00000001
+  CALL NZ, change_palette
 
-  ; Compare to see if we need to change the direction
-  CP 160    ; Max X
-  JR Z, .dec_x
-  CP 8      ; Min X
-  JR Z, .inc_x
-  JR .end_x ; No changes needed
-
-.dec_x:
-  LD A, -1
-  LD [_MOVX], A
-  JR .end_x
-
-.inc_x:
-  LD A, 1
-  LD [_MOVX], A
-
-.end_x:
+  ; Delay
   CALL delay
-  JR animation
+  JR movement
 ; Game loop end
+
+; Movement routines
+move_right:
+  LD A, [_SPR0_X]
+  CP 160
+  RET Z
+
+  INC A
+  LD [_SPR0_X], A
+  RET
+
+move_left:
+  LD A, [_SPR0_X]
+  CP 8
+  RET Z
+
+  DEC A
+  LD [_SPR0_X], A
+  RET
+
+move_up:
+  LD A, [_SPR0_Y]
+  CP 16
+  RET Z
+
+  DEC A
+  LD [_SPR0_Y], A
+  RET
+
+move_down:
+  LD A, [_SPR0_Y]
+  CP 152
+  RET Z
+
+  INC A
+  LD [_SPR0_Y], A
+  RET
+
+; Change palette routine
+change_palette:
+  LD A, [_SPR0_ATT]
+  AND %00010000
+  JR Z, .palette_0
+
+  LD A, [_SPR0_ATT]
+  RES 4, A
+  LD [_SPR0_ATT], A
+
+  CALL delay
+  RET
+
+.palette_0:
+  LD A, [_SPR0_ATT]
+  SET 4, A
+  LD [_SPR0_ATT], A
+
+  RET
+
+; Joypad reading routine
+read_joypad:
+  ; Read d-pad
+  LD A, %00100000
+  LD [rP1], A
+
+  ; Read value several times to avoid bouncing effect
+  LD A, [rP1]
+  LD A, [rP1]
+  LD A, [rP1]
+  LD A, [rP1]
+
+  AND $0F
+  SWAP A
+  LD B, A
+
+  ; Read buttons
+  LD A, %00010000
+  LD [rP1], A
+
+  ; Read value several times to avoid bouncing effect
+  LD A, [rP1]
+  LD A, [rP1]
+  LD A, [rP1]
+  LD A, [rP1]
+
+  AND $0F
+  OR B
+  CPL
+  LD [_PAD], A
+  RET
 
 ; LCD's turn off rutine
 turn_off_LCD:
