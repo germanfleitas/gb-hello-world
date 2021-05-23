@@ -1,0 +1,79 @@
+INCLUDE "gbhw.inc"
+
+; Program start
+SECTION "start", ROM0[$0100]
+  NOP
+  JP start
+
+  ; Header
+  ROM_HEADER ROM_NOMBC, ROM_SIZE_32KBYTE, RAM_SIZE_0KBYTE
+
+; start label
+start:
+  NOP
+  DI
+  LD SP, $FFFF
+
+; initialization label
+initialization:
+  LD A, %11100100
+  LD [rBGP], A
+  LD A, 0
+  LD [rSCX], A
+  LD [rSCY], A
+
+  CALL turn_of_LCD
+
+  ; Load tile in the tile memory
+  LD HL, tile_face
+  LD DE, _VRAM
+  LD B, 16
+
+.loop_load_tile
+  LD A, [HL]
+  LD [DE], A
+  DEC B
+  JR Z, .end_loop_load_tile
+  INC HL
+  INC DE
+  JR .loop_load_tile
+.end_loop_load_tile
+
+; Write the tile into the tile map
+LD HL, _SCRN0
+LD [HL], $00
+
+; Config and activate display
+LD A, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_BGON|LCDCF_OBJ8|LCDCF_OBJOFF
+LD [rLCDC], A
+
+; Infinite loop
+game_loop:
+  HALT
+  NOP
+  JR game_loop
+
+; LCD's turn off rutine
+turn_of_LCD:
+  LD A, [rLCDC]
+  RLCA
+  RET NC
+
+; Wait for V-Blank
+.wait_VBlank
+  LD A, [rLY]
+  CP 145
+  JR NZ, .wait_VBlank
+
+  ; Here we're in V-Blank, turn of the display
+  LD A, [rLCDC]
+  RES 7, A
+  LD [rLCDC], A
+
+  RET
+
+; Tile data
+tile_face:
+  DB $30,$30,$30,$20,$05,$7C,$80,$B0
+  DB $30,$30,$00,$30,$40,$50,$10,$10
+end_tile_face:
